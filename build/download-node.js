@@ -51,9 +51,12 @@ async function main() {
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`)
   fs.writeFileSync(archive, Buffer.from(await res.arrayBuffer()))
 
-  // tar 自动识别格式：Windows 的 bsdtar 解 zip，GNU tar 解 tar.gz
-  const r = spawnSync('tar', ['-xf', archive, '-C', tmp], { stdio: 'inherit' })
-  if (r.status !== 0) throw new Error(`tar extract failed (exit ${r.status})`)
+  // Windows Git Bash tar 会误解析 D:\ 路径，改用 PowerShell 解 zip。
+  const r = process.platform === 'win32'
+    ? spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
+        'Expand-Archive -LiteralPath "' + archive + '" -DestinationPath "' + tmp + '" -Force'], { stdio: 'inherit' })
+    : spawnSync('tar', ['-xf', archive, '-C', tmp], { stdio: 'inherit' })
+  if (r.status !== 0) throw new Error(`archive extract failed (exit ${r.status})`)
 
   const name = process.platform === 'win32' ? 'node.exe' : 'node'
   const bin = findFile(tmp, name)
