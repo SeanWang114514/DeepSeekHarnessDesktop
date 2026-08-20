@@ -5,7 +5,7 @@
   "private": true,
   "main": "app/main.js",
   "devDependencies": {
-    "electron": "^37.10.3"
+    "electron": "^32.3.3"
   },
   "dependencies": {
     "png-to-ico": "^3.0.2",

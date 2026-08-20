@@ -11,13 +11,19 @@ permissions:
 
 jobs:
   build:
-    name: ${{ matrix.os }}
+    name: ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
       fail-fast: false          # 一个平台失败不阻塞其他平台
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          # Snapdragon / Windows on ARM：使用原生 ARM64 Electron + Node，
+          # 不要把运行时架构写成 runner 的 x64。
+          - { os: windows-latest, arch: x64 }
+          - { os: windows-latest, arch: x86 }
+          - { os: macos-latest, arch: native }
+          - { os: ubuntu-latest, arch: native }
 
     steps:
       - name: Checkout
@@ -48,7 +54,16 @@ jobs:
         run: node build/trim.js
 
       - name: Install app dependencies (electron)
-        run: npm install
+        shell: bash
+        run: |
+          # Electron 的架构必须显式指定；否则 ARM64 产物会悄悄装成 x64。
+          if [ "${{ matrix.arch }}" = "x86" ]; then
+            npm install --arch=ia32
+          elif [ "${{ matrix.arch }}" = "arm64" ]; then
+            npm install --arch=arm64
+          else
+            npm install
+          fi
 
       - name: Generate app icon
         run: node build/convert-icon.js log.svg build/app.ico
@@ -59,7 +74,15 @@ jobs:
         run: Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile "build\rcedit-x64.exe"
 
       - name: Download bundled Node runtime
-        run: node build/download-node.js v24.14.0
+        shell: bash
+        run: |
+          if [ "${{ matrix.arch }}" = "x86" ]; then
+            TARGET_ARCH=x86 node build/download-node.js v24.14.0
+          elif [ "${{ matrix.arch }}" = "arm64" ]; then
+            TARGET_ARCH=arm64 node build/download-node.js v24.14.0
+          else
+            node build/download-node.js v24.14.0
+          fi
 
       - name: Assemble desktop app
         run: node build/assemble.js

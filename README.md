@@ -9,6 +9,7 @@
 
 - **一键启动**：双击 `DeepSeekHarness.exe` → 自动拉起后端 → 直接打开 DeepSeek Harness Web UI
 - **内置 Node 24**：自包含运行时，用户无需安装 Node.js
+- **Windows on ARM 兼容**：骁龙设备提供 x86（32 位）构建，依赖 Windows ARM 的 WOW 模拟运行；另提供常规 x64 构建
 - **完整环境**：打包了 Harness 全部依赖（链接已物化为真实文件）
 - **无边框窗口**：UI 铺满窗口，右上角内嵌最小化 / 最大化 / 关闭按钮
 - **单实例**：重复启动不会拉起多个后端
@@ -24,6 +25,7 @@
 | Linux | `installers/DeepSeekHarness-linux-<arch>-<ver>.tar.gz` | 免安装压缩包（解压即用） |
 | Linux | `installers/deepseek-harness_<ver>_<arch>.deb` | Debian/Ubuntu 安装包 |
 
+> Windows CI 同时构建 x64 与 x86（骁龙/Windows ARM 推荐 x86），macOS/Linux 构建原生架构。
 > 三平台均由 GitHub Actions 自动构建（`.github/workflows/build.yml` 矩阵），
 > 推送 `v*` 标签时自动发布到 Release；也可 `workflow_dispatch` 手动触发。
 
@@ -68,7 +70,8 @@ node build/trim.js                             # 删除冗余 @deepseek-ai 副�
 ### 3. 运行时 + 组装
 
 ```bash
-node build/download-node.js v24.14.0           # 内置 Node（按当前平台/架构）
+TARGET_ARCH=x86 node build/download-node.js v24.14.0 # Windows ARM：下载 32 位 Node
+node build/download-node.js v24.14.0                # 默认按当前平台/架构
 npm install                                    # electron + sharp + png-to-ico
 node build/convert-icon.js log.svg build/app.ico
 node build/assemble.js                         # 组装到 build/DeepSeekHarnessApp

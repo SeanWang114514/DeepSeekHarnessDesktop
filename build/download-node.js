@@ -9,11 +9,21 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
 const VERSION = process.argv[2] || 'v24.14.0'
+// Windows ARM64 可通过 x86（ia32）模拟运行；TARGET_ARCH 支持 x86/x64/arm64。
+const targetArch = process.env.TARGET_ARCH || process.arch
+const arch = targetArch === 'x86' || targetArch === 'ia32' ? 'x86'
+  : targetArch === 'arm64' ? 'arm64' : 'x64'
+// Node 官方 Windows 包使用 win-x86；其他平台没有 x86 目标。
+if (arch === 'x86' && process.platform !== 'win32') {
+  throw new Error('TARGET_ARCH=x86 仅支持 Windows')
+}
+if (!['x86', 'x64', 'arm64'].includes(arch)) {
+  throw new Error(`不支持的目标架构: ${targetArch}`)
+}
 const root = path.resolve(__dirname)
 const proj = path.dirname(root)
 const destDir = path.join(proj, 'resources', 'node')
 
-const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
 const plat = process.platform === 'win32' ? 'win' : process.platform // darwin | linux
 const ext = process.platform === 'win32' ? 'zip' : 'tar.gz'
 const file = `node-${VERSION}-${plat}-${arch}.${ext}`

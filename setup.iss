@@ -29,8 +29,10 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+; ARM64 Windows 上使用 x86 Electron，由系统 WOW 模拟层运行。
+; 不能写 x64compatible，否则 ARM64 设备会被错误拦截。
+ArchitecturesAllowed=x86compatible
+ArchitecturesInstallIn64BitMode=x86compatible
 MinVersion=10.0.19041
 CloseApplications=no
 RestartApplications=no
