@@ -29,6 +29,15 @@ if (!fs.existsSync(path.join(h, 'package.json'))) {
 const pkgPath = path.join(h, 'package.json')
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
 delete pkg.packageManager
+// x86 Electron/Node on Windows ARM 需要同时带上 ia32 原生依赖（尤其 esbuild）。
+// pnpm 默认只安装当前 CI runner 的 x64 optional package。
+if (process.env.TARGET_ARCH === 'x86') {
+  pkg.pnpm = { ...(pkg.pnpm || {}), supportedArchitectures: {
+    ...(pkg.pnpm?.supportedArchitectures || {}),
+    os: ['win32'],
+    cpu: ['x64', 'ia32'],
+  } }
+}
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
 fs.writeFileSync(path.join(h, '.npmrc'), 'manage-package-manager-versions=false\nnode-linker=hoisted\n')
 

@@ -45,7 +45,13 @@ jobs:
         run: choco install innosetup -y --no-progress
 
       - name: Clone & build DeepSeek Harness
-        run: node build/build-harness.js
+        shell: bash
+        run: |
+          if [ "${{ matrix.arch }}" = "x86" ]; then
+            TARGET_ARCH=x86 node build/build-harness.js
+          else
+            node build/build-harness.js
+          fi
 
       - name: Materialize node_modules links
         run: node build/materialize3.js resources/harness
