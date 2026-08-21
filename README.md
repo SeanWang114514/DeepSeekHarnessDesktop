@@ -9,7 +9,7 @@
 
 - **一键启动**：双击 `DeepSeekHarness.exe` → 自动拉起后端 → 直接打开 DeepSeek Harness Web UI
 - **内置 Node 24**：自包含运行时，用户无需安装 Node.js
-- **Windows on ARM 兼容**：骁龙设备提供 x86（32 位）构建，依赖 Windows ARM 的 WOW 模拟运行；另提供常规 x64 构建
+- **Windows on ARM 兼容**：骁龙设备提供 x86（32 位）构建，依赖 Windows ARM 的 WOW 模拟运行；安装包明确标记为 `Windows-ARM64-x86`，另提供常规 x64 构建
 - **完整环境**：打包了 Harness 全部依赖（链接已物化为真实文件）
 - **无边框窗口**：UI 铺满窗口，右上角内嵌最小化 / 最大化 / 关闭按钮
 - **单实例**：重复启动不会拉起多个后端

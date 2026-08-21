@@ -96,7 +96,8 @@ jobs:
           if (-not $iscc) { throw "ISCC.exe not found" }
           $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME -replace '^v','' } else { 'dev' }
           if (-not $ver) { $ver = "0.1.0" }
-          & $iscc "/DProjectDir=$((Get-Location).Path)" "/DMyAppVersion=$ver" setup.iss
+          $archName = if ("${{ matrix.arch }}" -eq "x86") { "Windows-ARM64-x86" } elseif ("${{ matrix.arch }}" -eq "x64") { "Windows-x64" } else { "Windows-${{ matrix.arch }}" }
+          & $iscc "/DProjectDir=$((Get-Location).Path)" "/DMyAppVersion=$ver" "/DMyAppArch=$archName" setup.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC compile failed, exit $LASTEXITCODE" }
 
       # ---------- macOS: .app + .dmg ----------

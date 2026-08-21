@@ -4,6 +4,9 @@
   #define MyAppVersion "0.1.0"
 #endif
 #define MyAppExeName "DeepSeekHarness.exe"
+#ifndef MyAppArch
+  #define MyAppArch "Windows-x64"
+#endif
 ; 项目根路径：本地默认值，CI 上用 /DProjectDir= 覆盖
 #ifndef ProjectDir
   #define ProjectDir "C:\Users\AzurLane\DeepSeekHarnessDesktop"
@@ -23,7 +26,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir={#ProjectDir}\installers
-OutputBaseFilename=DeepSeekHarnessSetup-{#MyAppVersion}
+OutputBaseFilename=DeepSeekHarnessSetup-{#MyAppArch}-{#MyAppVersion}
 SetupIconFile={#ProjectDir}\build\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/ultra64
