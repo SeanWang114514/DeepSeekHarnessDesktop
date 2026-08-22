@@ -63,7 +63,30 @@ if (process.env.TARGET_ARCH === 'x86') {
     fs.mkdirSync(path.dirname(ia32), { recursive: true })
     fs.cpSync(source, ia32, { recursive: true, dereference: true })
   }
-  console.log('[build-harness] ia32 esbuild:', ia32)
+  const required = [
+    ['@esbuild/win32-ia32', 'esbuild.exe'],
+    ['@img/sharp-win32-ia32', null],
+    ['@koromix/koffi-win32-ia32', null],
+  ]
+  for (const [name, marker] of required) {
+    const target = path.join(h, 'node_modules', name)
+    const candidates = [
+      target,
+      path.join(h, 'website', 'node_modules', name),
+      path.join(h, 'apps', 'web', 'node_modules', name),
+    ]
+    const source = candidates.find((p) => fs.existsSync(p) && (!marker || fs.existsSync(path.join(p, marker))))
+    if (!source) {
+      console.error(`[build-harness] missing ${name} after pnpm install`)
+      process.exit(1)
+    }
+    if (source !== target) {
+      fs.rmSync(target, { recursive: true, force: true })
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.cpSync(source, target, { recursive: true, dereference: true })
+    }
+    console.log(`[build-harness] ia32 native dependency: ${name}`)
+  }
 }
 
 run('pnpm', ['run', 'build'], h)

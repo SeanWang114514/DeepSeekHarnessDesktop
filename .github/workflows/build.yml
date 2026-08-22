@@ -83,7 +83,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.arch }}" = "x86" ]; then
-            TARGET_ARCH=x86 node build/download-node.js v20.18.3
+            TARGET_ARCH=x86 node build/download-node.js v22.19.0
           elif [ "${{ matrix.arch }}" = "arm64" ]; then
             TARGET_ARCH=arm64 node build/download-node.js v24.14.0
           else
