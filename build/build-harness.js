@@ -43,6 +43,14 @@ fs.writeFileSync(path.join(h, '.npmrc'), 'manage-package-manager-versions=false\
 
 run('pnpm', ['install', '--no-frozen-lockfile'], h)
 
+// pnpm 10 在 Windows x64 runner 上不会始终物化 sharp/koffi 的 ia32
+// optional package；用 npm 明确指定目标平台补齐它们。
+if (process.env.TARGET_ARCH === 'x86') {
+  run('npm', ['install', '--no-save', '--ignore-scripts', '--include=optional',
+    '--os=win32', '--cpu=ia32',
+    '@img/sharp-win32-ia32@0.35.3', '@koromix/koffi-win32-ia32@3.1.0'], h)
+}
+
 // pnpm 可能把不同 CPU 的 optional package 留在 workspace 子目录，
 // 但 Electron 启动时从 harness 根目录解析 esbuild。确保 ia32 二进制位于
 // 根 node_modules/@esbuild 下，否则 Windows ARM 上会误加载 win32-x64。
