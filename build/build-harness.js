@@ -42,6 +42,30 @@ fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
 fs.writeFileSync(path.join(h, '.npmrc'), 'manage-package-manager-versions=false\nnode-linker=hoisted\n')
 
 run('pnpm', ['install', '--no-frozen-lockfile'], h)
+
+// pnpm 可能把不同 CPU 的 optional package 留在 workspace 子目录，
+// 但 Electron 启动时从 harness 根目录解析 esbuild。确保 ia32 二进制位于
+// 根 node_modules/@esbuild 下，否则 Windows ARM 上会误加载 win32-x64。
+if (process.env.TARGET_ARCH === 'x86') {
+  const ia32 = path.join(h, 'node_modules', '@esbuild', 'win32-ia32')
+  const candidates = [
+    ia32,
+    path.join(h, 'website', 'node_modules', '@esbuild', 'win32-ia32'),
+    path.join(h, 'apps', 'web', 'node_modules', '@esbuild', 'win32-ia32'),
+  ]
+  const source = candidates.find((p) => fs.existsSync(path.join(p, 'esbuild.exe')))
+  if (!source) {
+    console.error('[build-harness] missing @esbuild/win32-ia32 after pnpm install')
+    process.exit(1)
+  }
+  if (source !== ia32) {
+    fs.rmSync(ia32, { recursive: true, force: true })
+    fs.mkdirSync(path.dirname(ia32), { recursive: true })
+    fs.cpSync(source, ia32, { recursive: true, dereference: true })
+  }
+  console.log('[build-harness] ia32 esbuild:', ia32)
+}
+
 run('pnpm', ['run', 'build'], h)
 
 fs.rmSync(path.join(h, '.git'), { recursive: true, force: true })
