@@ -75,7 +75,19 @@ if (process.env.TARGET_ARCH === 'x86') {
       path.join(h, 'website', 'node_modules', name),
       path.join(h, 'apps', 'web', 'node_modules', name),
     ]
-    const source = candidates.find((p) => fs.existsSync(p) && (!marker || fs.existsSync(path.join(p, marker))))
+    let source = candidates.find((p) => fs.existsSync(p) && (!marker || fs.existsSync(path.join(p, marker))))
+    if (!source) {
+      const pnpmDir = path.join(h, 'node_modules', '.pnpm')
+      if (fs.existsSync(pnpmDir)) {
+        for (const entry of fs.readdirSync(pnpmDir)) {
+          const candidate = path.join(pnpmDir, entry, 'node_modules', name)
+          if (fs.existsSync(candidate) && (!marker || fs.existsSync(path.join(candidate, marker)))) {
+            source = candidate
+            break
+          }
+        }
+      }
+    }
     if (!source) {
       console.error(`[build-harness] missing ${name} after pnpm install`)
       process.exit(1)
