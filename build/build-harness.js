@@ -53,7 +53,7 @@ if (process.env.TARGET_ARCH === 'x86') {
     name: 'native-ia32-deps', version: '1.0.0', private: true,
     dependencies: {
       '@img/sharp-win32-ia32': '0.35.3',
-      '@koromix/koffi-win32-ia32': '3.1.0',
+      '@koromix/koffi-win32-ia32': '3.1.5',
     },
     pnpm: { supportedArchitectures: { os: ['win32'], cpu: ['ia32'] } },
   }, null, 2))
@@ -71,6 +71,48 @@ if (process.env.TARGET_ARCH === 'x86') {
     fs.cpSync(source, target, { recursive: true, dereference: true })
   }
   fs.rmSync(nativeTmp, { recursive: true, force: true })
+}
+
+// x86 运行时不能留下任何 x64 原生包。许多包会优先发现同级的 x64 optional
+// dependency，即使 ia32 包已经存在，最终就会报 Mismatched native module。
+function normalizeIa32NativePackages(root) {
+  const specs = [
+    ['@esbuild/win32-x64', '@esbuild/win32-ia32', 'esbuild.exe'],
+    ['@img/sharp-win32-x64', '@img/sharp-win32-ia32', null],
+    ['@koromix/koffi-win32-x64', '@koromix/koffi-win32-ia32', null],
+  ]
+  const nm = path.join(root, 'node_modules')
+  const found = new Set()
+  function walk(dir) {
+    let entries
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (e.name === '.git') continue
+      const p = path.join(dir, e.name)
+      // pnpm hoisted 安装可能留下目录 junction；Dirent.isDirectory()
+      // 对 junction 返回 false，因此必须先按名字处理，不能只依赖 isDirectory。
+      for (const [x64Name, ia32Name, marker] of specs) {
+        if (e.name === x64Name || p.endsWith(path.sep + x64Name)) {
+          const parent = path.dirname(p)
+          const dst = path.join(parent, ia32Name)
+          const rootIa32 = path.join(nm, ia32Name)
+          if ((!fs.existsSync(dst) || (marker && !fs.existsSync(path.join(dst, marker)))) && fs.existsSync(rootIa32)) {
+            fs.rmSync(dst, { recursive: true, force: true })
+            fs.cpSync(rootIa32, dst, { recursive: true, dereference: true })
+          }
+          fs.rmSync(p, { recursive: true, force: true })
+          found.add(x64Name)
+          continue
+        }
+      }
+      let isDir = false
+      try { isDir = fs.statSync(p).isDirectory() } catch {}
+      // 已处理的平台包不再深入，避免扫描 pnpm store 的巨大重复树。
+      if (isDir && !e.name.startsWith('win32-')) walk(p)
+    }
+  }
+  walk(nm)
+  console.log('[build-harness] removed x64 native packages:', [...found].join(', ') || 'none')
 }
 
 // pnpm 可能把不同 CPU 的 optional package 留在 workspace 子目录，
@@ -129,6 +171,7 @@ if (process.env.TARGET_ARCH === 'x86') {
     }
     console.log(`[build-harness] ia32 native dependency: ${name}`)
   }
+  normalizeIa32NativePackages(h)
 }
 
 run('pnpm', ['run', 'build'], h)
