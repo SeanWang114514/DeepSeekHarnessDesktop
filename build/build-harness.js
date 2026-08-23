@@ -49,10 +49,16 @@ if (process.env.TARGET_ARCH === 'x86') {
   const nativeTmp = path.join(proj, 'build', `native-ia32-${process.pid}`)
   fs.rmSync(nativeTmp, { recursive: true, force: true })
   fs.mkdirSync(nativeTmp, { recursive: true })
-  run('npm', ['init', '-y'], nativeTmp)
-  run('npm', ['install', '--ignore-scripts', '--include=optional',
-    '--os=win32', '--cpu=ia32',
-    '@img/sharp-win32-ia32@0.35.3', '@koromix/koffi-win32-ia32@3.1.0'], nativeTmp)
+  fs.writeFileSync(path.join(nativeTmp, 'package.json'), JSON.stringify({
+    name: 'native-ia32-deps', version: '1.0.0', private: true,
+    dependencies: {
+      '@img/sharp-win32-ia32': '0.35.3',
+      '@koromix/koffi-win32-ia32': '3.1.0',
+    },
+    pnpm: { supportedArchitectures: { os: ['win32'], cpu: ['ia32'] } },
+  }, null, 2))
+  fs.writeFileSync(path.join(nativeTmp, '.npmrc'), 'node-linker=hoisted\n')
+  run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], nativeTmp)
   for (const name of ['@img/sharp-win32-ia32', '@koromix/koffi-win32-ia32']) {
     const source = path.join(nativeTmp, 'node_modules', name)
     const target = path.join(h, 'node_modules', name)
