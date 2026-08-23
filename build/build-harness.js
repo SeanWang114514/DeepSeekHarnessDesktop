@@ -46,9 +46,25 @@ run('pnpm', ['install', '--no-frozen-lockfile'], h)
 // pnpm 10 在 Windows x64 runner 上不会始终物化 sharp/koffi 的 ia32
 // optional package；用 npm 明确指定目标平台补齐它们。
 if (process.env.TARGET_ARCH === 'x86') {
-  run('npm', ['install', '--no-save', '--ignore-scripts', '--include=optional',
+  const nativeTmp = path.join(proj, 'build', `native-ia32-${process.pid}`)
+  fs.rmSync(nativeTmp, { recursive: true, force: true })
+  fs.mkdirSync(nativeTmp, { recursive: true })
+  run('npm', ['init', '-y'], nativeTmp)
+  run('npm', ['install', '--ignore-scripts', '--include=optional',
     '--os=win32', '--cpu=ia32',
-    '@img/sharp-win32-ia32@0.35.3', '@koromix/koffi-win32-ia32@3.1.0'], h)
+    '@img/sharp-win32-ia32@0.35.3', '@koromix/koffi-win32-ia32@3.1.0'], nativeTmp)
+  for (const name of ['@img/sharp-win32-ia32', '@koromix/koffi-win32-ia32']) {
+    const source = path.join(nativeTmp, 'node_modules', name)
+    const target = path.join(h, 'node_modules', name)
+    if (!fs.existsSync(source)) {
+      console.error(`[build-harness] npm did not install ${name}`)
+      process.exit(1)
+    }
+    fs.rmSync(target, { recursive: true, force: true })
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.cpSync(source, target, { recursive: true, dereference: true })
+  }
+  fs.rmSync(nativeTmp, { recursive: true, force: true })
 }
 
 // pnpm 可能把不同 CPU 的 optional package 留在 workspace 子目录，
