@@ -91,6 +91,27 @@ function patchWindowsAclForIa32() {
   }
   fs.writeFileSync(sandboxSrc, s2)
   console.log('[build-harness] patched sandbox-local PLATFORM_CHAINS.win32 for ia32 (empty chain)')
+
+  // subprocess-local 的 PROCESSENTRY32W 布局守卫同样写死 x64 的 568；
+  // ia32 下为 556（th32DefaultHeapID 指针 4 字节）。该守卫在首次创建
+  // Windows 进程检查器（终端/subprocess 调用）时触发，不补会在运行时崩。
+  const inspSrc = path.join(h, 'packages', 'subprocess', 'subprocess-local', 'src', 'windows-inspector.ts')
+  if (!fs.existsSync(inspSrc)) {
+    console.error('[build-harness] subprocess-local/src/windows-inspector.ts not found')
+    process.exit(1)
+  }
+  let s3 = fs.readFileSync(inspSrc, 'utf8')
+  const orig3 = s3
+  s3 = s3.replace(
+    /PROCESSENTRY32W\.size\s*!==\s*568/,
+    "PROCESSENTRY32W.size !== (process.arch === 'ia32' ? 556 : 568)",
+  )
+  if (s3 === orig3) {
+    console.error('[build-harness] windows-inspector PROCESSENTRY32W guard not found (upstream changed?)')
+    process.exit(1)
+  }
+  fs.writeFileSync(inspSrc, s3)
+  console.log('[build-harness] patched subprocess-local windows-inspector.ts for ia32 layout')
 }
 
 if (process.env.TARGET_ARCH === 'x86') patchWindowsAclForIa32()
