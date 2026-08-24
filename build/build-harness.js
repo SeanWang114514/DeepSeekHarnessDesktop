@@ -41,6 +41,36 @@ if (process.env.TARGET_ARCH === 'x86') {
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
 fs.writeFileSync(path.join(h, '.npmrc'), 'manage-package-manager-versions=false\nnode-linker=hoisted\n')
 
+// x86（ia32）下 koffi 的 Windows 结构布局是 32 位的：STARTUPINFOW=68、
+// PROCESS_INFORMATION=16；而 harness 源码硬编码了 x64 的 104/24，导致
+// sandbox-windows-acl 在加载时直接抛 "STARTUPINFOW layout mismatch"。
+// 这里把源码里两个布局守卫改成按 process.arch 动态取值。
+function patchWindowsAclForIa32() {
+  const aclSrc = path.join(h, 'packages', 'sandbox', 'sandbox-windows-acl', 'src', 'ffi.ts')
+  if (!fs.existsSync(aclSrc)) {
+    console.error('[build-harness] sandbox-windows-acl/src/ffi.ts not found')
+    process.exit(1)
+  }
+  let src = fs.readFileSync(aclSrc, 'utf8')
+  const orig = src
+  src = src.replace(
+    /STARTUPINFOW\.size\s*!==\s*104/,
+    "STARTUPINFOW.size !== (process.arch === 'ia32' ? 68 : 104)",
+  )
+  src = src.replace(
+    /PROCESS_INFORMATION\.size\s*!==\s*24/,
+    "PROCESS_INFORMATION.size !== (process.arch === 'ia32' ? 16 : 24)",
+  )
+  if (src === orig) {
+    console.error('[build-harness] ffi.ts layout guards not found (upstream changed?)')
+    process.exit(1)
+  }
+  fs.writeFileSync(aclSrc, src)
+  console.log('[build-harness] patched sandbox-windows-acl ffi.ts for ia32 layout')
+}
+
+if (process.env.TARGET_ARCH === 'x86') patchWindowsAclForIa32()
+
 run('pnpm', ['install', '--no-frozen-lockfile'], h)
 
 // pnpm 10 在 Windows x64 runner 上不会始终物化 sharp/koffi 的 ia32
