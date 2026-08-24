@@ -113,49 +113,10 @@ if (process.env.TARGET_ARCH === 'x86') {
   fs.rmSync(nativeTmp, { recursive: true, force: true })
 }
 
-// x86 运行时不能留下任何 x64 原生包。pnpm 在 x64 runner 上会把每个原生依赖的
-// win32-x64 包也物化出来，而不少包会优先发现同级的 x64 二进制。
-// 注意：绝不能递归整棵 node_modules（含 .pnpm 虚拟存储）——pnpm 的 junction
-// 成环会导致无限遍历卡死（此前该函数让构建挂起 6 小时）。改为有界清理：
-//   1) 顶层 hoisted 目录：只跟随真实目录，跳过 .pnpm / node_modules / junction；
-//   2) .pnpm 虚拟存储：只清理一层，按目录名删除 win32-x64 包。
-function normalizeIa32NativePackages(root) {
-  const nm = path.join(root, 'node_modules')
-  const removed = []
-
-  function walkReal(dir) {
-    let entries
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
-    for (const e of entries) {
-      if (e.name === '.git' || e.name === '.pnpm' || e.name === 'node_modules') continue
-      const p = path.join(dir, e.name)
-      if (e.name.includes('win32-x64')) {
-        fs.rmSync(p, { recursive: true, force: true })
-        removed.push(p.slice(nm.length + 1))
-        continue
-      }
-      let st
-      try { st = fs.lstatSync(p) } catch { continue }
-      if (st.isDirectory() && !st.isSymbolicLink()) walkReal(p)
-    }
-  }
-  walkReal(nm)
-
-  const store = path.join(nm, '.pnpm')
-  let storeNames = []
-  try { storeNames = fs.readdirSync(store) } catch {}
-  for (const name of storeNames) {
-    if (name.includes('win32-x64')) {
-      fs.rmSync(path.join(store, name), { recursive: true, force: true })
-      removed.push('.pnpm/' + name)
-    }
-  }
-
-  console.log('[build-harness] removed x64 native packages:', removed.length ? removed.join(', ') : 'none')
-}
-
-// 最终校验：harness 根 node_modules 下必须存在 ia32 原生二进制，且不能
-// 残留任何 x64 原生包（x86 运行时一旦误加载 x64 二进制即崩溃）。
+// 最终校验：harness 根 node_modules 下必须存在 ia32 原生二进制。
+// 注意：不要在这里删除 win32-x64 包——构建阶段（x64 runner）还需要它们
+// （例如 rolldown 的 @rolldown/binding-win32-x64-msvc），而且 esbuild/sharp/
+// koffi 在运行时都是按 process.arch 选择平台包的，x64 包存在不影响 x86 加载。
 if (process.env.TARGET_ARCH === 'x86') {
   const mustExist = [
     ['@esbuild/win32-ia32', 'esbuild.exe'],
@@ -175,7 +136,6 @@ if (process.env.TARGET_ARCH === 'x86') {
     console.error('[build-harness] @esbuild/win32-ia32 missing under @esbuild namespace')
     process.exit(1)
   }
-  normalizeIa32NativePackages(h)
 }
 
 run('pnpm', ['run', 'build'], h)
