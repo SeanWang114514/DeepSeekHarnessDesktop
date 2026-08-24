@@ -19,12 +19,8 @@ jobs:
       fail-fast: false          # 一个平台失败不阻塞其他平台
       matrix:
         include:
-          # Snapdragon / Windows on ARM：使用原生 ARM64 Electron + Node，
-          # 不要把运行时架构写成 runner 的 x64。
-          - { os: windows-latest, arch: x64 }
+          # 只构建 Snapdragon / Windows on ARM 兼容版（x86/ia32 模拟）。
           - { os: windows-latest, arch: x86 }
-          - { os: macos-latest, arch: native }
-          - { os: ubuntu-latest, arch: native }
 
     steps:
       - name: Checkout
