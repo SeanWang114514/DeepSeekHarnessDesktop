@@ -42,31 +42,55 @@ fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
 fs.writeFileSync(path.join(h, '.npmrc'), 'manage-package-manager-versions=false\nnode-linker=hoisted\n')
 
 // x86（ia32）下 koffi 的 Windows 结构布局是 32 位的：STARTUPINFOW=68、
-// PROCESS_INFORMATION=16；而 harness 源码硬编码了 x64 的 104/24，导致
-// sandbox-windows-acl 在加载时直接抛 "STARTUPINFOW layout mismatch"。
-// 这里把源码里两个布局守卫改成按 process.arch 动态取值。
+// PROCESS_INFORMATION=16；而 harness 源码把这两个尺寸常量写死为 x64 的
+// 104/24，导致 sandbox-windows-acl 在加载时直接抛 "STARTUPINFOW layout
+// mismatch"（ffi.ts 在模块加载时用这两个常量做布局断言）。这里把常量改成
+// 按 process.arch 动态取值，让模块能在 ia32 下正常加载。
+// 另外 sandbox-windows-acl 的 ACL 逻辑（token.ts/acl.ts）仍深度依赖 x64
+// 指针宽度与偏移，ia32 下不能真正执行沙箱，因此把 sandbox-local 的 win32
+// 运行链在 ia32 下置空（confine() 时 fail-closed 抛出 SandboxUnavailable
+// 而不是内存损坏）；桌面启动器再以 danger-full-access 模式运行，命令实际
+// 不经过沙箱，功能完全可用。
 function patchWindowsAclForIa32() {
-  const aclSrc = path.join(h, 'packages', 'sandbox', 'sandbox-windows-acl', 'src', 'ffi.ts')
-  if (!fs.existsSync(aclSrc)) {
-    console.error('[build-harness] sandbox-windows-acl/src/ffi.ts not found')
+  const abiSrc = path.join(h, 'packages', 'sandbox', 'sandbox-windows-acl', 'src', 'win32-abi.ts')
+  if (!fs.existsSync(abiSrc)) {
+    console.error('[build-harness] sandbox-windows-acl/src/win32-abi.ts not found')
     process.exit(1)
   }
-  let src = fs.readFileSync(aclSrc, 'utf8')
+  let src = fs.readFileSync(abiSrc, 'utf8')
   const orig = src
   src = src.replace(
-    /STARTUPINFOW\.size\s*!==\s*104/,
-    "STARTUPINFOW.size !== (process.arch === 'ia32' ? 68 : 104)",
+    /export const STARTUPINFOW_SIZE = 104/,
+    "export const STARTUPINFOW_SIZE = process.arch === 'ia32' ? 68 : 104",
   )
   src = src.replace(
-    /PROCESS_INFORMATION\.size\s*!==\s*24/,
-    "PROCESS_INFORMATION.size !== (process.arch === 'ia32' ? 16 : 24)",
+    /export const PROCESS_INFORMATION_SIZE = 24/,
+    "export const PROCESS_INFORMATION_SIZE = process.arch === 'ia32' ? 16 : 24",
   )
   if (src === orig) {
-    console.error('[build-harness] ffi.ts layout guards not found (upstream changed?)')
+    console.error('[build-harness] win32-abi.ts size constants not found (upstream changed?)')
     process.exit(1)
   }
-  fs.writeFileSync(aclSrc, src)
-  console.log('[build-harness] patched sandbox-windows-acl ffi.ts for ia32 layout')
+  fs.writeFileSync(abiSrc, src)
+  console.log('[build-harness] patched sandbox-windows-acl win32-abi.ts for ia32 layout')
+
+  const sandboxSrc = path.join(h, 'packages', 'sandbox', 'sandbox-local', 'src', 'index.ts')
+  if (!fs.existsSync(sandboxSrc)) {
+    console.error('[build-harness] sandbox-local/src/index.ts not found')
+    process.exit(1)
+  }
+  let s2 = fs.readFileSync(sandboxSrc, 'utf8')
+  const orig2 = s2
+  s2 = s2.replace(
+    /win32: \['windows-acl'\],/,
+    "win32: process.arch === 'ia32' ? [] : ['windows-acl'],",
+  )
+  if (s2 === orig2) {
+    console.error('[build-harness] sandbox-local PLATFORM_CHAINS.win32 not found (upstream changed?)')
+    process.exit(1)
+  }
+  fs.writeFileSync(sandboxSrc, s2)
+  console.log('[build-harness] patched sandbox-local PLATFORM_CHAINS.win32 for ia32 (empty chain)')
 }
 
 if (process.env.TARGET_ARCH === 'x86') patchWindowsAclForIa32()

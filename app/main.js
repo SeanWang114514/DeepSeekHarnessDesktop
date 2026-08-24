@@ -94,9 +94,14 @@ async function startHarness() {
   fs.writeSync(fdOut, `\n===== ${new Date().toISOString()} DeepSeek Harness 启动 =====\n`)
 
   let child
+  const spawnEnv = { ...process.env }
+  // Snapdragon 860（Windows ARM，x86 模拟）上 harness 的 Windows ACL 沙箱
+  // 仅支持 x64；ia32 下沙箱不可用，以 danger-full-access 运行让 bash/代码
+  // 工具直接无沙箱执行（功能完整，仅失去进程级 ACL 限制）。
+  if (process.arch === 'ia32') spawnEnv.DSH_PERMISSION_MODE = 'danger-full-access'
   try {
     child = spawn(node, ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', 'web'], {
-      cwd, stdio: ['ignore', fdOut, fdErr], windowsHide: true,
+      cwd, stdio: ['ignore', fdOut, fdErr], windowsHide: true, env: spawnEnv,
     })
   } catch (e) { showError(`无法启动进程：${String(e.message || e)}`); return false }
   serverProcess = child
