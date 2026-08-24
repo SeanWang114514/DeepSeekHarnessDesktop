@@ -13,7 +13,8 @@ jobs:
   build:
     name: ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    # Windows x86（ARM 兼容）构建在 x86 模拟下很慢，给足时间。
+    timeout-minutes: 360
     strategy:
       fail-fast: false          # 一个平台失败不阻塞其他平台
       matrix:

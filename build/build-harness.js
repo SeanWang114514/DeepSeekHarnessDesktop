@@ -46,130 +46,119 @@ run('pnpm', ['install', '--no-frozen-lockfile'], h)
 // pnpm 10 在 Windows x64 runner 上不会始终物化 sharp/koffi 的 ia32
 // optional package；用 npm 明确指定目标平台补齐它们。
 if (process.env.TARGET_ARCH === 'x86') {
+  // 读取 harness 实际解析到的 JS 包版本：koffi / esbuild 的 platform 包版本
+  // 必须与 JS 包完全一致，否则会报 "Mismatched native Koffi modules"。
+  const resolveVer = (name) => {
+    for (const base of [h, path.join(h, 'node_modules')]) {
+      try {
+        const pj = path.join(base, name, 'package.json')
+        if (fs.existsSync(pj)) return JSON.parse(fs.readFileSync(pj, 'utf8')).version
+      } catch {}
+    }
+    const store = path.join(h, 'node_modules', '.pnpm')
+    if (fs.existsSync(store)) {
+      for (const entry of fs.readdirSync(store)) {
+        if (entry.startsWith(name.replace('/', '+') + '@')) {
+          try {
+            return JSON.parse(fs.readFileSync(path.join(store, entry, 'node_modules', name, 'package.json'), 'utf8')).version
+          } catch {}
+        }
+      }
+    }
+    return null
+  }
+  const koffiVer = resolveVer('koffi')
+  const esbuildVer = resolveVer('esbuild')
+  const sharpVer = '0.35.3'
+  const libvipsVer = '1.3.2'
+  if (!koffiVer || !esbuildVer) {
+    console.error(`[build-harness] cannot resolve koffi (${koffiVer}) / esbuild (${esbuildVer})`)
+    process.exit(1)
+  }
+  console.log(`[build-harness] ia32 native versions: koffi=${koffiVer} esbuild=${esbuildVer} sharp=${sharpVer} libvips=${libvipsVer}`)
+
+  // 在隔离的临时项目里明确安装 ia32 平台包（CPU 只声明 ia32）。
   const nativeTmp = path.join(proj, 'build', `native-ia32-${process.pid}`)
   fs.rmSync(nativeTmp, { recursive: true, force: true })
   fs.mkdirSync(nativeTmp, { recursive: true })
   fs.writeFileSync(path.join(nativeTmp, 'package.json'), JSON.stringify({
     name: 'native-ia32-deps', version: '1.0.0', private: true,
     dependencies: {
-      '@img/sharp-win32-ia32': '0.35.3',
-      '@koromix/koffi-win32-ia32': '3.1.5',
+      '@img/sharp-win32-ia32': sharpVer,
+      '@img/sharp-libvips-win32-ia32': libvipsVer,
+      '@koromix/koffi-win32-ia32': koffiVer,
+      '@esbuild/win32-ia32': esbuildVer,
     },
     pnpm: { supportedArchitectures: { os: ['win32'], cpu: ['ia32'] } },
   }, null, 2))
   fs.writeFileSync(path.join(nativeTmp, '.npmrc'), 'node-linker=hoisted\n')
   run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], nativeTmp)
-  for (const name of ['@img/sharp-win32-ia32', '@koromix/koffi-win32-ia32']) {
+  for (const name of [
+    '@img/sharp-win32-ia32',
+    '@img/sharp-libvips-win32-ia32',
+    '@koromix/koffi-win32-ia32',
+    '@esbuild/win32-ia32',
+  ]) {
     const source = path.join(nativeTmp, 'node_modules', name)
     const target = path.join(h, 'node_modules', name)
     if (!fs.existsSync(source)) {
-      console.error(`[build-harness] npm did not install ${name}`)
+      console.error(`[build-harness] did not install ${name}`)
       process.exit(1)
     }
     fs.rmSync(target, { recursive: true, force: true })
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.cpSync(source, target, { recursive: true, dereference: true })
+    console.log(`[build-harness] ia32 native dependency: ${name}`)
   }
   fs.rmSync(nativeTmp, { recursive: true, force: true })
 }
 
-// x86 运行时不能留下任何 x64 原生包。许多包会优先发现同级的 x64 optional
-// dependency，即使 ia32 包已经存在，最终就会报 Mismatched native module。
+// x86 运行时不能留下任何 x64 原生包。pnpm 在 x64 runner 上会把每个原生依赖的
+// win32-x64 包也物化出来，而不少包会优先发现同级的 x64 二进制。通用做法：
+// 删除整棵 node_modules 树下所有名字包含 win32-x64 的平台包目录。
 function normalizeIa32NativePackages(root) {
-  const specs = [
-    ['@esbuild/win32-x64', '@esbuild/win32-ia32', 'esbuild.exe'],
-    ['@img/sharp-win32-x64', '@img/sharp-win32-ia32', null],
-    ['@koromix/koffi-win32-x64', '@koromix/koffi-win32-ia32', null],
-  ]
   const nm = path.join(root, 'node_modules')
-  const found = new Set()
+  const removed = []
   function walk(dir) {
     let entries
     try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
     for (const e of entries) {
       if (e.name === '.git') continue
       const p = path.join(dir, e.name)
-      // pnpm hoisted 安装可能留下目录 junction；Dirent.isDirectory()
-      // 对 junction 返回 false，因此必须先按名字处理，不能只依赖 isDirectory。
-      for (const [x64Name, ia32Name, marker] of specs) {
-        if (e.name === x64Name || p.endsWith(path.sep + x64Name)) {
-          const parent = path.dirname(p)
-          const dst = path.join(parent, ia32Name)
-          const rootIa32 = path.join(nm, ia32Name)
-          if ((!fs.existsSync(dst) || (marker && !fs.existsSync(path.join(dst, marker)))) && fs.existsSync(rootIa32)) {
-            fs.rmSync(dst, { recursive: true, force: true })
-            fs.cpSync(rootIa32, dst, { recursive: true, dereference: true })
-          }
-          fs.rmSync(p, { recursive: true, force: true })
-          found.add(x64Name)
-          continue
-        }
+      if (p.includes('win32-x64')) {
+        fs.rmSync(p, { recursive: true, force: true })
+        removed.push(p.slice(nm.length + 1))
+        continue
       }
       let isDir = false
       try { isDir = fs.statSync(p).isDirectory() } catch {}
-      // 已处理的平台包不再深入，避免扫描 pnpm store 的巨大重复树。
       if (isDir && !e.name.startsWith('win32-')) walk(p)
     }
   }
   walk(nm)
-  console.log('[build-harness] removed x64 native packages:', [...found].join(', ') || 'none')
+  console.log('[build-harness] removed x64 native packages:', removed.length ? removed.join(', ') : 'none')
 }
 
-// pnpm 可能把不同 CPU 的 optional package 留在 workspace 子目录，
-// 但 Electron 启动时从 harness 根目录解析 esbuild。确保 ia32 二进制位于
-// 根 node_modules/@esbuild 下，否则 Windows ARM 上会误加载 win32-x64。
+// 最终校验：harness 根 node_modules 下必须存在 ia32 原生二进制，且不能
+// 残留任何 x64 原生包（x86 运行时一旦误加载 x64 二进制即崩溃）。
 if (process.env.TARGET_ARCH === 'x86') {
-  const ia32 = path.join(h, 'node_modules', '@esbuild', 'win32-ia32')
-  const candidates = [
-    ia32,
-    path.join(h, 'website', 'node_modules', '@esbuild', 'win32-ia32'),
-    path.join(h, 'apps', 'web', 'node_modules', '@esbuild', 'win32-ia32'),
-  ]
-  const source = candidates.find((p) => fs.existsSync(path.join(p, 'esbuild.exe')))
-  if (!source) {
-    console.error('[build-harness] missing @esbuild/win32-ia32 after pnpm install')
-    process.exit(1)
-  }
-  if (source !== ia32) {
-    fs.rmSync(ia32, { recursive: true, force: true })
-    fs.mkdirSync(path.dirname(ia32), { recursive: true })
-    fs.cpSync(source, ia32, { recursive: true, dereference: true })
-  }
-  const required = [
+  const mustExist = [
     ['@esbuild/win32-ia32', 'esbuild.exe'],
     ['@img/sharp-win32-ia32', null],
     ['@koromix/koffi-win32-ia32', null],
   ]
-  for (const [name, marker] of required) {
-    const target = path.join(h, 'node_modules', name)
-    const candidates = [
-      target,
-      path.join(h, 'website', 'node_modules', name),
-      path.join(h, 'apps', 'web', 'node_modules', name),
-    ]
-    let source = candidates.find((p) => fs.existsSync(p) && (!marker || fs.existsSync(path.join(p, marker))))
-    if (!source) {
-      const pnpmDir = path.join(h, 'node_modules', '.pnpm')
-      if (fs.existsSync(pnpmDir)) {
-        for (const entry of fs.readdirSync(pnpmDir)) {
-          const candidate = path.join(pnpmDir, entry, 'node_modules', name)
-          if (fs.existsSync(candidate) && (!marker || fs.existsSync(path.join(candidate, marker)))) {
-            source = candidate
-            break
-          }
-        }
-      }
-    }
-    if (!source) {
-      console.error(`[build-harness] missing ${name} after pnpm install`)
+  for (const [name, marker] of mustExist) {
+    const dir = path.join(h, 'node_modules', name)
+    if (!fs.existsSync(dir) || (marker && !fs.existsSync(path.join(dir, marker)))) {
+      console.error(`[build-harness] missing ia32 native package: ${name}`)
       process.exit(1)
     }
-    if (source !== target) {
-      fs.rmSync(target, { recursive: true, force: true })
-      fs.mkdirSync(path.dirname(target), { recursive: true })
-      fs.cpSync(source, target, { recursive: true, dereference: true })
-    }
-    console.log(`[build-harness] ia32 native dependency: ${name}`)
+  }
+  // esbuild 主包还要求 @esbuild 命名空间下存在 win32-ia32
+  const esbuildNs = path.join(h, 'node_modules', '@esbuild', 'win32-ia32')
+  if (!fs.existsSync(path.join(esbuildNs, 'esbuild.exe'))) {
+    console.error('[build-harness] @esbuild/win32-ia32 missing under @esbuild namespace')
+    process.exit(1)
   }
   normalizeIa32NativePackages(h)
 }
